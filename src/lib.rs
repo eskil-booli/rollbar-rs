@@ -776,7 +776,7 @@ mod tests {
                                     "colno": 24
                                 }],
                                 "exception": {
-                                    "class": "core::num::ParseIntError",
+                                    "class": "core::num::error::ParseIntError",
                                     "message": "invalid digit found in string",
                                     "description": "invalid digit found in string"
                                 }
