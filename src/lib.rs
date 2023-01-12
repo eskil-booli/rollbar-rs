@@ -420,7 +420,7 @@ impl<'a> ReportBuilder<'a> {
     pub fn from_error<E: error::Error>(&'a mut self, error: &'a E) -> ReportErrorBuilder<'a> {
         let mut trace = Trace::default();
         trace.exception.class = std::any::type_name::<E>().to_owned();
-        trace.exception.message = error.description().to_owned();
+        trace.exception.message = error.to_string();
         trace.exception.description = error
             .source()
             .map_or_else(|| format!("{:?}", error), |c| format!("{:?}", c));
