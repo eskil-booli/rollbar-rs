@@ -13,13 +13,14 @@ extern crate tokio;
 
 //use std::io::{self, Write};
 use std::borrow::ToOwned;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::{error, fmt, panic, thread};
 
 use backtrace::Backtrace;
 //use hyper::client::HttpConnector;
 use hyper::rt::Future;
-use hyper::{Method, Request};
+use hyper::{Method};
 use hyper_tls::HttpsConnector;
 use tokio::runtime::current_thread;
 use serde_json::value::Value as JsonValue;
@@ -240,6 +241,14 @@ impl<'a> FrameBuilder {
     }
 }
 
+/// Request metadata
+#[derive(Serialize)]
+pub struct Request {
+    pub url: String,
+    pub method: String,
+    pub headers: HashMap<String, String>,
+}
+
 /// Builder specialized for reporting errors.
 #[derive(Serialize)]
 pub struct ReportErrorBuilder<'a> {
@@ -256,6 +265,9 @@ pub struct ReportErrorBuilder<'a> {
     /// The title shown in the dashboard for this report.
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
+
+    /// Request metadata
+    request: Option<Request>,
 
     /// Custom arbitrary metadata.
     metadata: Option<JsonValue>
@@ -297,6 +309,9 @@ impl<'a> ReportErrorBuilder<'a> {
     /// Set arbitrary custom metadata to be attached to the error report.
     add_field!(with_metadata, metadata, JsonValue);
 
+    /// Set request metadata to be attached to the error report.
+    add_field!(with_request, request, Request);
+
     /// Set the title to show in the dashboard for this report.
     add_generic_field!(with_title, title, Into<String>);
 
@@ -331,6 +346,7 @@ impl<'a> ToString for ReportErrorBuilder<'a> {
                     .to_string(),
                 "language": "rust",
                 "title": self.title,
+                "request": self.request,
                 "custom": self.metadata
                     .to_owned()
                     .unwrap_or_else(|| json!({}))
@@ -350,6 +366,9 @@ pub struct ReportMessageBuilder<'a> {
     /// The severity level of the error. `Level::ERROR` is the default value.
     level: Option<Level>,
 
+    /// Request metadata
+    request: Option<Request>,
+
     /// Custom arbitrary metadata.
     metadata: Option<JsonValue>,
 }
@@ -357,6 +376,9 @@ pub struct ReportMessageBuilder<'a> {
 impl<'a> ReportMessageBuilder<'a> {
     /// Set the security level of the report. `Level::ERROR` is the default value
     add_generic_field!(with_level, level, Into<Level>);
+
+    /// Set request metadata to be attached to the error report.
+    add_field!(with_request, request, Request);
 
     /// Set arbitrary custom metadata to be attached to the error report.
     add_field!(with_metadata, metadata, JsonValue);
@@ -392,6 +414,7 @@ impl<'a> ToString for ReportMessageBuilder<'a> {
                     .to_owned()
                     .unwrap_or(Level::INFO)
                     .to_string(),
+                "request": self.request,
                 "custom": self.metadata
                     .to_owned()
                     .unwrap_or_else(|| json!({}))
@@ -431,6 +454,7 @@ impl<'a> ReportBuilder<'a> {
             trace: trace,
             level: None,
             title: Some(message.to_owned()),
+            request: None,
             metadata: None,
         }
     }
@@ -450,6 +474,7 @@ impl<'a> ReportBuilder<'a> {
             trace: trace,
             level: None,
             title: Some(format!("{}", error)),
+            request: None,
             metadata: None,
         }
     }
@@ -471,6 +496,7 @@ impl<'a> ReportBuilder<'a> {
             trace: trace,
             level: None,
             title: Some(message),
+            request: None,
             metadata: None,
         }
     }
@@ -481,6 +507,7 @@ impl<'a> ReportBuilder<'a> {
             report_builder: self,
             message: message,
             level: None,
+            request: None,
             metadata: None,
         }
     }
@@ -535,7 +562,7 @@ impl Client {
     /// Function used internally to send payloads to Rollbar as default `send_strategy`.
     fn send(&self, payload: String) -> thread::JoinHandle<Option<ResponseStatus>> {
         let body = hyper::Body::from(payload);
-        let request = Request::builder()
+        let request = hyper::Request::builder()
             .method(Method::POST)
             .uri(URL)
             .body(body)
@@ -610,6 +637,7 @@ mod tests {
     extern crate hyper;
     extern crate serde_json;
 
+    use std::collections::HashMap;
     use std::panic;
     use std::sync::mpsc::channel;
     use std::sync::{Arc, Mutex};
@@ -726,6 +754,7 @@ mod tests {
                         }
                     }
                 },
+                "request": null,
                 "custom": {},
                 "level": "info",
                 "language": "rust",
@@ -806,6 +835,7 @@ mod tests {
                                 }
                             }
                         },
+                        "request": null,
                         "custom": {},
                         "level": "warning",
                         "language": "rust",
@@ -828,6 +858,11 @@ mod tests {
             .build_report()
             .from_message("hai")
             .with_level("warning")
+            .with_request(crate::Request {
+                url: "http://example.com/".to_owned(),
+                method: "GET".to_owned(),
+                headers: HashMap::new(),
+            })
             .with_metadata(json!({
                 "foo": "bar"
             }))
@@ -841,6 +876,11 @@ mod tests {
                     "message": {
                         "body": "hai"
                     }
+                },
+                "request": {
+                    "url": "http://example.com/",
+                    "method": "GET",
+                    "headers": {},
                 },
                 "custom": {
                      "foo": "bar"
