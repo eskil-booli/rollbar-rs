@@ -19,10 +19,8 @@ use std::{error, fmt, panic, thread};
 
 use backtrace::Backtrace;
 //use hyper::client::HttpConnector;
-use hyper::rt::Future;
 use hyper::{Method};
 use hyper_tls::HttpsConnector;
-use tokio::runtime::current_thread;
 use serde_json::value::Value as JsonValue;
 
 /// Report an error. Any type that implements `error::Error` is accepted.
@@ -541,7 +539,7 @@ impl Client {
     /// You can get the `access_token` at
     /// <https://rollbar.com/{your_organization}/{your_app}/settings/access_tokens>.
     pub fn new<T: Into<String>>(access_token: T, environment: T) -> Client {
-        let https = HttpsConnector::new(4).expect("TLS initialization failed");
+        let https = HttpsConnector::new();
         let client = hyper::Client::builder().build::<_, hyper::Body>(https);
 
         Client {
@@ -568,22 +566,27 @@ impl Client {
             .body(body)
             .expect("Cannot build post request!");
 
-        let job = self
+        let request = self
             .http_client
-            .request(request)
-            .map(|res| Some(ResponseStatus::from(res.status())))
-            .map_err(|error| {
-                println!("Error while sending a report to Rollbar.");
-                print!("The error returned by Rollbar was: {:?}.\n\n", error);
-
-                None::<ResponseStatus>
-            });
+            .request(request);
 
         thread::spawn(move || {
-            current_thread::Runtime::new()
-                .unwrap()
-                .block_on(job)
-                .unwrap()
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                let response = request.await;
+                response
+                    .map(|res| Some(ResponseStatus::from(res.status())))
+                    .map_err(|error| {
+                        println!("Error while sending a report to Rollbar.");
+                        print!("The error returned by Rollbar was: {:?}.\n\n", error);
+                        None::<ResponseStatus>
+                    })
+                    .unwrap()
+            })
         })
     }
 }
